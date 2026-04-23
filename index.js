@@ -1,9 +1,18 @@
 require('dotenv').config();
 
+const crypto = require('crypto');
 const express = require('express');
 const axios = require('axios');
 const app = express();
+const cors = require('cors');
 const PORT = process.env.PORT || 3000;
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors({
+  origin: 'http://localhost:5173', 
+  credentials: true                
+}));
 
 // Helper to check if today is a weekday (Mon-Fri)
 // JS getDay(): 0 = Sun, 1 = Mon ... 5 = Fri, 6 = Sat
@@ -29,10 +38,10 @@ const getCurrentTimeInMinutes = () => {
 
 app.get('/trigger-attendance', async (req, res) => {
     const url = "https://erp.teky.edu.vn/web/dataset/call_kw/hr.employee/attendance_manual";
-    
+
     // Logic for Reason
     const reason = isTodayWeekday() ? "Checkin trường ngoài" : "Checkin cơ sở tân bình";
-    
+
     // Time Logic (5 PM check)
     const currentHour = new Date().getHours();
     const isCheckin = currentHour < 17;
@@ -68,10 +77,10 @@ app.get('/trigger-attendance', async (req, res) => {
         });
 
         console.log(`Action: ${isCheckin ? 'Checkin' : 'Checkout'} at ${new Date().toISOString()}`);
-        res.status(200).json({ 
-            success: true, 
+        res.status(200).json({
+            success: true,
             message: isCheckin ? "Checkin Successful" : "Checkout Successful",
-            data: response.data 
+            data: response.data
         });
 
     } catch (error) {
@@ -107,7 +116,7 @@ app.post('/checkin-auto', async (req, res) => {
             const sessionEndTime = session.datetime.end_time;
 
             // Step 3: Compare current time with session start time
-            if (currentTimeMinutes >= sessionStartTime) {
+            if (currentTimeMinutes >= sessionStartTime && currentTimeMinutes < sessionEndTime) {
                 try {
                     // Step 4: Call check-in API
                     const checkinResponse = await axios.post(
@@ -176,5 +185,137 @@ app.post('/checkin-auto', async (req, res) => {
         });
     }
 });
+
+app.post('/login', async (req, res) => {
+    let { mobile_number, password } = req.body;
+    
+    if (!mobile_number || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'mobile_number and password are required'
+        });
+    }
+
+    const deviceID = crypto.randomUUID();
+
+    if (mobile_number[0] == '0') {
+        mobile_number = mobile_number.replace('0', '+84');
+    }
+
+    try {
+        const loginResponse = await axios.post(
+            'https://api.tutoro.vn/v1/user/login_pass',
+            {
+                "mobile_number": mobile_number,
+                "password": password,
+                "device_id": deviceID,
+                "firebase_token": process.env.FIREBASE_TOKEN
+            }
+        );
+
+        // Success response - check if login succeeded
+        if (loginResponse.data.message.status === 'Fail') {
+            return res.status(loginResponse.data.message.status_code || 400).json({
+                success: false,
+                message: loginResponse.data.message.text,
+                errors: loginResponse.data.error
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: loginResponse.data
+        });
+        
+
+    } catch (error) {
+        // Handle API error responses
+        if (error.response?.data?.message?.status === 'Fail') {
+            return res.status(error.response.data.message.status_code || 400).json({
+                success: false,
+                message: error.response.data.message.text,
+                errors: error.response.data.error
+            });
+        }
+
+        // Handle other errors
+        console.error('login API error:', error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.message
+        });
+    }   
+});
+
+app.post('/class-sessions/:session_id/checkin', async (req, res) => {
+    const session_id = req.params.session_id
+    const bearerToken = process.env.BEARER_TOKEN || '';
+
+    try {
+        const checkinResponse = await axios.post(
+            `https://api.tutoro.vn/v1/class_sessions/${session_id}/checkin`,
+            {}
+            ,{
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`
+                }
+            }
+        )
+
+        if (checkinResponse.status == 200) {
+            res.json({
+                success: true,
+                session: session_id,
+                data: checkinResponse.data
+            })
+        } else {
+            console.error(checkinResponse.data)
+        }
+    } catch (error) {
+        console.error('Check-in API error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+})
+
+app.post('/class-sessions/:session_id/set-total-students', async (req, res) => {
+    const session_id = req.params.session_id
+    const { total_students } = req.body
+    const bearerToken = process.env.BEARER_TOKEN || '';
+
+    if (!total_students || typeof total_students !== 'number') {
+        return res.status(400).json({
+            success: false,
+            error: 'total_students is required and must be a number'
+        });
+    }
+
+    try {
+        const setTotalStudentResponse = await axios.post(
+            `https://api.tutoro.vn/v1/class_sessions/${session_id}/total_student`,
+            {
+                'total_students': total_students
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`
+                },
+            }
+        )
+
+        res.json({
+            success: true,
+            data: setTotalStudentResponse.data
+        })
+    } catch (error) {
+        console.error('Set total students API error:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+})
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
