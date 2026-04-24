@@ -1,3 +1,27 @@
+// import express, { Router } from "express";
+// import serverless from "serverless-http";
+
+// const app = express();
+
+// const router = Router();
+// // middleware
+// app.use(express.json());
+
+// // routes
+// router.get("/hello", (req, res) => {
+//   res.json({ message: "Hello from Express on Netlify 🚀" });
+// });
+
+// router.post("/data", (req, res) => {
+//   res.json({ received: req.body });
+// });
+
+// app.use('/api/', router)
+
+// // export handler
+// export const handler = serverless(app);
+
+
 require('dotenv').config();
 
 const crypto = require('crypto');
@@ -5,6 +29,7 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 const cors = require('cors');
+const serverless = require('serverless-http');
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
@@ -13,6 +38,7 @@ app.use(cors({
   origin: 'http://localhost:5173', 
   credentials: true                
 }));
+const router = express.Router()
 
 // Helper to check if today is a weekday (Mon-Fri)
 // JS getDay(): 0 = Sun, 1 = Mon ... 5 = Fri, 6 = Sat
@@ -36,7 +62,7 @@ const getCurrentTimeInMinutes = () => {
     return now.getHours() * 60 + now.getMinutes();
 };
 
-app.get('/trigger-attendance', async (req, res) => {
+router.get('/trigger-attendance', async (req, res) => {
     const url = "https://erp.teky.edu.vn/web/dataset/call_kw/hr.employee/attendance_manual";
 
     // Logic for Reason
@@ -89,7 +115,7 @@ app.get('/trigger-attendance', async (req, res) => {
     }
 });
 
-app.post('/checkin-auto', async (req, res) => {
+router.post('/checkin-auto', async (req, res) => {
     const today = getTodayDateString();
     const currentTimeMinutes = getCurrentTimeInMinutes();
     const bearerToken = process.env.BEARER_TOKEN || '';
@@ -186,7 +212,7 @@ app.post('/checkin-auto', async (req, res) => {
     }
 });
 
-app.post('/login', async (req, res) => {
+router.post('/login', async (req, res) => {
     let { mobile_number, password } = req.body;
     
     if (!mobile_number || !password) {
@@ -247,7 +273,7 @@ app.post('/login', async (req, res) => {
     }   
 });
 
-app.post('/class-sessions/:session_id/checkin', async (req, res) => {
+router.post('/class-sessions/:session_id/checkin', async (req, res) => {
     const session_id = req.params.session_id
     const bearerToken = process.env.BEARER_TOKEN || '';
 
@@ -280,7 +306,7 @@ app.post('/class-sessions/:session_id/checkin', async (req, res) => {
     }
 })
 
-app.post('/class-sessions/:session_id/set-total-students', async (req, res) => {
+router.post('/class-sessions/:session_id/set-total-students', async (req, res) => {
     const session_id = req.params.session_id
     const { total_students } = req.body
     const bearerToken = process.env.BEARER_TOKEN || '';
@@ -318,4 +344,6 @@ app.post('/class-sessions/:session_id/set-total-students', async (req, res) => {
     }
 })
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.use('/api/', router)
+
+export const handler = serverless(app);
