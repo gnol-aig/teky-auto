@@ -1,27 +1,3 @@
-// import express, { Router } from "express";
-// import serverless from "serverless-http";
-
-// const app = express();
-
-// const router = Router();
-// // middleware
-// app.use(express.json());
-
-// // routes
-// router.get("/hello", (req, res) => {
-//   res.json({ message: "Hello from Express on Netlify 🚀" });
-// });
-
-// router.post("/data", (req, res) => {
-//   res.json({ received: req.body });
-// });
-
-// app.use('/api/', router)
-
-// // export handler
-// export const handler = serverless(app);
-
-
 require('dotenv').config();
 
 const crypto = require('crypto');
@@ -35,21 +11,26 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || 'http://localhost:5173', 
-  credentials: true                  
+    origin: process.env.ALLOWED_ORIGIN || '*',
+    credentials: true
 }));
 const router = express.Router()
+
+// Helper to get current date in Vietnam timezone
+const getVietnamDate = () => {
+    return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+};
 
 // Helper to check if today is a weekday (Mon-Fri)
 // JS getDay(): 0 = Sun, 1 = Mon ... 5 = Fri, 6 = Sat
 const isTodayWeekday = () => {
-    const day = new Date().getDay();
+    const day = getVietnamDate().getDay();
     return day >= 1 && day <= 5;
 };
 
 // Helper to get today's date in dd-mm-yyyy format
 const getTodayDateString = () => {
-    const today = new Date();
+    const today = getVietnamDate();
     const day = String(today.getDate()).padStart(2, '0');
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
@@ -58,9 +39,27 @@ const getTodayDateString = () => {
 
 // Helper to get current time in minutes (HH*60 + MM)
 const getCurrentTimeInMinutes = () => {
-    const now = new Date();
-    return now.getHours() * 60 + now.getMinutes();
+    const vnTime = getVietnamDate();
+    return vnTime.getHours() * 60 + vnTime.getMinutes();
 };
+
+router.get('/current-time', async (req, res) => {
+    const vnTime = getVietnamDate();
+    try {
+        res.status(200).json({
+            success: true,
+            data: {
+                hour: vnTime.getHours(),
+                minute: vnTime.getMinutes(),
+                minuteTime: getCurrentTimeInMinutes()
+            }
+        })
+    } catch (error) {
+        res.status(500).json({
+            success: false
+        })
+    }
+})
 
 router.get('/trigger-attendance', async (req, res) => {
     const url = "https://erp.teky.edu.vn/web/dataset/call_kw/hr.employee/attendance_manual";
@@ -69,7 +68,8 @@ router.get('/trigger-attendance', async (req, res) => {
     const reason = isTodayWeekday() ? "Checkin trường ngoài" : "Checkin cơ sở tân bình";
 
     // Time Logic (5 PM check)
-    const currentHour = new Date().getHours();
+    const vnTime = getVietnamDate();
+    const currentHour = vnTime.getHours();
     const isCheckin = currentHour < 17;
 
     // Build Payload
@@ -102,7 +102,7 @@ router.get('/trigger-attendance', async (req, res) => {
             }
         });
 
-        console.log(`Action: ${isCheckin ? 'Checkin' : 'Checkout'} at ${new Date().toISOString()}`);
+        console.log(`Action: ${isCheckin ? 'Checkin' : 'Checkout'} at ${getVietnamDate().toISOString()}`);
         res.status(200).json({
             success: true,
             message: isCheckin ? "Checkin Successful" : "Checkout Successful",
@@ -165,7 +165,7 @@ router.post('/checkin-auto', async (req, res) => {
                         message: checkinResponse.data.message
                     });
 
-                    console.log(`✓ Checked in to session ${session.session_id} (${session.class_name}) at ${new Date().toISOString()}`);
+                    console.log(`✓ Checked in to session ${session.session_id} (${session.class_name}) at ${getVietnamDate().toISOString()}`);
                 } catch (checkinError) {
                     checkinResults.push({
                         session_id: session.session_id,
@@ -197,7 +197,7 @@ router.post('/checkin-auto', async (req, res) => {
         res.status(200).json({
             success: true,
             current_time_minutes: currentTimeMinutes,
-            current_time_formatted: new Date().toLocaleTimeString('en-GB'),
+            current_time_formatted: getVietnamDate().toLocaleTimeString('en-GB'),
             today: today,
             total_sessions: sessions.length,
             checkin_results: checkinResults
@@ -214,7 +214,7 @@ router.post('/checkin-auto', async (req, res) => {
 
 router.post('/login', async (req, res) => {
     let { mobile_number, password } = req.body;
-    
+
     if (!mobile_number || !password) {
         return res.status(400).json({
             success: false,
@@ -252,7 +252,6 @@ router.post('/login', async (req, res) => {
             success: true,
             data: loginResponse.data
         });
-        
 
     } catch (error) {
         // Handle API error responses
@@ -270,7 +269,7 @@ router.post('/login', async (req, res) => {
             success: false,
             error: error.message
         });
-    }   
+    }
 });
 
 router.post('/class-sessions/:session_id/checkin', async (req, res) => {
@@ -281,7 +280,7 @@ router.post('/class-sessions/:session_id/checkin', async (req, res) => {
         const checkinResponse = await axios.post(
             `https://api.tutoro.vn/v1/class_sessions/${session_id}/checkin`,
             {}
-            ,{
+            , {
                 headers: {
                     'Authorization': `Bearer ${bearerToken}`
                 }
